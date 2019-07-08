@@ -1,6 +1,6 @@
 (function () {
     const Dimension = 768;
-    const Steps = 10;
+    const Steps = 30;
 
     const vsSource = `
         attribute vec4 aVertexPosition;
@@ -23,10 +23,25 @@
         
         highp vec4 thresholdColor(vec4 texelColor) {
             highp vec4 p = texelColor;
-            if ((texelColor.r < 0.9) || (texelColor.g < 0.9) || (texelColor.b < 0.9) || (texelColor.a < 0.1)) {
-                p = vec4(1, 0, 0, 1);
+            p.rgb = (p.rgb * p.a) + (1.0 - p.a);
+            p.a = 1.0;
+                        
+            highp float l = length(p.rgb);
+            int a = 0;
+            if (a == 0) {
+                // Length of vector(1, 1, 1)
+                // sqrt(3) = 1.73205080757
+                if (l < 1.71) {
+                    p = vec4(1, 0, 0, 1);
+                } else {
+                    p = vec4(0, 0, 0, 1);
+                }
             } else {
-                p = vec4(0, 0, 0, 1);
+                if ((p.r < 0.9) || (p.g < 0.9) || (p.b < 0.9)) {
+                    p = vec4(1, 0, 0, 1);
+                } else {
+                    p = vec4(0, 0, 0, 1);
+                }
             }
             return p;
         }
@@ -185,7 +200,7 @@
         buffers = initBuffers(gl);
 
 
-        texture = loadTexture(gl, 'cubetexture.png');
+        texture = loadTexture(gl, 'cubetexture-v2.png');
         // texture = loadTexture(gl, 'MomandKidGiraffe1.png');
 
         function render() {
@@ -258,7 +273,7 @@
 
             texture = gl.createTexture();
             gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
 
             // WebGL1 has different requirements for power of 2 images
             // vs non power of 2 images so check if the image is a
