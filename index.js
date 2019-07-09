@@ -1,6 +1,7 @@
 (function () {
     const Dimension = 768;
     const Steps = 30;
+    const SurfaceSize = 1.0;
 
     const vsSource = `
         attribute vec4 aVertexPosition;
@@ -48,8 +49,6 @@
         
         void main(void) {
             gl_FragColor = thresholdColor(texture2D(uSampler, vTextureCoord));
-            
-            // gl_FragColor = texture2D(uSampler, vTextureCoord);
         }
     `;
 
@@ -59,25 +58,32 @@
         
         void main(void) {
             highp vec4 texelColor = texture2D(uSampler, vTextureCoord);
-            highp float sum = texelColor.r;
+            highp float distance = texelColor.r;
             const highp float step = 1.0 / ${Dimension}.0;
             const highp float limit = step * ${Steps}.0;
 
-            for (highp float i = step; i < limit; i += step) {
+            for (highp float i = step; i <= limit; i += step) {
                 highp float x = vTextureCoord.x + i;
                 highp vec4 p = texture2D(uSampler, vec2(x, vTextureCoord.y));
-                sum = max(sum, p.r * (1.0 - i / limit));
+                distance = max(distance, p.r * (1.0 - i / limit));
             }
             
-            for (highp float i = step; i < limit; i += step) {
+            for (highp float i = step; i <= limit; i += step) {
                 highp float x = vTextureCoord.x - i;
                 highp vec4 p = texture2D(uSampler, vec2(x, vTextureCoord.y));
-                sum = max(sum, p.r * (1.0 - i / limit));
+                distance = max(distance, p.r * (1.0 - i / limit));
             }
             
-            gl_FragColor = vec4(sum, 0, 0, 1);
+            highp vec4 c = vec4(distance, 0, 0, 1);
+            gl_FragColor = c;
         }
     `;
+
+    // v = 1.0 - i / limit;
+    // limit*v = limit - i
+    // limit - limit*v = i
+    // limit * (1 - v) = i
+
 
     const fsVerticalBlur = `
         varying highp vec2 vTextureCoord;
@@ -90,21 +96,28 @@
             const highp float limit = step * ${Steps}.0;
 
             for (highp float i = step; i < limit; i += step) {
-                highp float y = vTextureCoord.y + i;
+                highp float y = vTextureCoord.y - i;
                 highp vec4 p = texture2D(uSampler, vec2(vTextureCoord.x, y));
-                sum = max(sum, p.r * (1.0 - i / limit));
+                highp float a = (1.0 - p.r) * limit;
+                highp float c = 1.0 - sqrt(a*a + i*i) / limit;
+                          
+                sum = max(sum, c);
             }
             
             for (highp float i = step; i < limit; i += step) {
-                highp float y = vTextureCoord.y - i;
+                highp float y = vTextureCoord.y + i;
                 highp vec4 p = texture2D(uSampler, vec2(vTextureCoord.x, y));
-                sum = max(sum, p.r * (1.0 - i / limit));
+                highp float a = (1.0 - p.r) * limit;
+                highp float c = 1.0 - sqrt(a*a + i*i) / limit;
+                          
+                sum = max(sum, c);
             }
             
             highp vec4 out_color = vec4(sum, 0, 0, 1);
-            if (sum < 1.0 && sum > 0.4) {
+            if (sum < 0.2 && sum > 0.1) {
                 out_color = vec4(1, 1, 1, 1);
             }
+
             gl_FragColor = out_color;
         }
     `;
@@ -200,8 +213,10 @@
         buffers = initBuffers(gl);
 
 
-        texture = loadTexture(gl, 'cubetexture-v2.png');
-        // texture = loadTexture(gl, 'MomandKidGiraffe1.png');
+        // texture = loadTexture(gl, 'flowers_frame.png');
+
+        texture = loadTexture(gl, '24bit_sRGB-17.jpg');
+        // texture = loadTexture(gl, 'cubetexture.png');
 
         function render() {
             if (frameBuffers.length > 0) {
@@ -217,10 +232,10 @@
         const positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
         const positions = [
-            -1.0, -1.0, 1.0,
-            1.0, -1.0, 1.0,
-            1.0, 1.0, 1.0,
-            -1.0, 1.0, 1.0
+            -SurfaceSize, -SurfaceSize, +SurfaceSize,
+            +SurfaceSize, -SurfaceSize, +SurfaceSize,
+            +SurfaceSize, +SurfaceSize, +SurfaceSize,
+            -SurfaceSize, +SurfaceSize, +SurfaceSize
         ];
 
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
@@ -255,48 +270,19 @@
     }
 
     function loadTexture(gl, url) {
-        // Because images have to be download over the internet
-        // they might take a moment until they are ready.
-        // Until then put a single pixel in the texture so we can
-        // use it immediately. When the image has finished downloading
-        // we'll update the texture with the contents of the image.
-        const level = 0;
-        const internalFormat = gl.RGBA;
-        const width = 1;
-        const height = 1;
-        const border = 0;
-        const srcFormat = gl.RGBA;
-        const srcType = gl.UNSIGNED_BYTE;
-
         const image = new Image();
         image.onload = function () {
-
             texture = gl.createTexture();
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-
-            // WebGL1 has different requirements for power of 2 images
-            // vs non power of 2 images so check if the image is a
-            // power of 2 in both dimensions.
-            // if (isPowerOf2(image.width) && isPowerOf2(image.height)) {
-            //     // Yes, it's a power of 2. Generate mips.
-            //     gl.generateMipmap(gl.TEXTURE_2D);
-            // } else {
-            // No, it's not a power of 2. Turn of mips and set
-            // wrapping to clamp to edge
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-            // }
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
             createFrameBuffers(gl, image);
         };
         image.src = url;
-    }
-
-    function isPowerOf2(value) {
-        return (value & (value - 1)) === 0;
     }
 
     function bindTexture(gl, texture, programInfo) {
@@ -309,7 +295,15 @@
         const zNear = 0.1;
         const zFar = 100.0;
         const projectionMatrix = mat4.create();
-        mat4.ortho(projectionMatrix, -1.0, 1.0, -1.0, 1.0, zNear, zFar);
+        mat4.ortho(
+            projectionMatrix,
+            -SurfaceSize,
+            +SurfaceSize,
+            -SurfaceSize,
+            +SurfaceSize,
+            zNear,
+            zFar
+        );
 
         const modelViewMatrix = mat4.create();
         mat4.translate(modelViewMatrix, modelViewMatrix, [0.0, 0.0, -5.0]);
@@ -392,6 +386,7 @@
                 const type = gl.UNSIGNED_SHORT;
                 const offset = 0;
                 gl.bindFramebuffer(gl.FRAMEBUFFER, frameBuffers[1]);
+                // gl.bindFramebuffer(gl.FRAMEBUFFER, null);
                 gl.drawElements(gl.TRIANGLES, vertexCount, type, offset);
             }
             {
@@ -472,7 +467,7 @@
             }
 
             ctx.fillStyle = "#FFFFFF";
-            ctx.fillRect(0,0,canvas.width, canvas.height);
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0, img.width, img.height, d, d, imgDim, imgDim);
         };
     }
